@@ -1,7 +1,12 @@
 source("libraries.R")
 
+# the following code normalizes mlb data and uses k-means clustering
+# to identify the player prototypes that get paid the most
+# author: joseph coleman, 5/28/2025
+
 # load the contract year stats (2) data from '3_scrape_accolades.R'
-contract_year_stats <- readxl::read_xlsx("contract_year_stats2.xlsx")
+contract_year_stats <- readxl::read_xlsx("data/contract_year_stats2.xlsx")
+contract_year_stats <- fastDummies::dummy_cols(contract_year_stats, select_columns = "pos", remove_first_dummy = TRUE)
 
 # define features
 features <- names(contract_year_stats)[11:ncol(contract_year_stats)]
@@ -29,7 +34,7 @@ normalized_df <- bind_cols(
   scaled_df
 )
 
-writexl::write_xlsx(normalized_df, "normalized_contract_year_stats.xlsx")
+writexl::write_xlsx(normalized_df, "data/normalized_contract_year_stats.xlsx")
 
 # K-Means Clustering ----
 # we can try clustering using k-means to see if there are patterns in which player prototypes
@@ -45,7 +50,7 @@ set.seed(42)
 wcss <- vector()
 
 for (k in 1:10) {
-  kmeans_model <- kmeans(scaled_df, centers = k, nstart = 25)
+  kmeans_model <- kmeans(scaled_df %>% select(1:109), centers = k, nstart = 25) # omit position columns from clustering
   wcss[k] <- kmeans_model$tot.withinss
 }
 
@@ -72,7 +77,7 @@ elbow_df$wcss_percent_change <- round((elbow_df$wcss_change / lag(elbow_df$wcss)
 
 # optimal number of clusters may be 4 or 5
 optimal_k <- 5
-kmeans_result <- kmeans(normalized_df[, 11:ncol(normalized_df)], centers = optimal_k)
+kmeans_result <- kmeans(normalized_df[, 11:119], centers = optimal_k)
 
 cluster_df <- contract_year_stats %>%
   mutate(cluster = kmeans_result$cluster) %>%

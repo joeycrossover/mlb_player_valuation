@@ -1,0 +1,33 @@
+# the following code loads necessary libraries for packages
+# being leveraged in MLB player valuation project/study
+# author: joseph coleman, 5/28/2025
+
+# load libraries and files ----
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(cluster)
+library(factoextra)
+library(scales)
+library(tidyr)
+library(corrplot)
+library(ggrepel)
+library(tidyverse)
+library(glmnet)
+library(stringr)
+library(rvest)
+library(purrr)
+library(stringi)
+library(RSelenium)
+library(wdman)
+library(xml2)
+library(digest)
+library(fs)
+library(webdriver)
+library(chromote)
+library(readr)
+library(httr)
+library(jsonlite)
+library(fastDummies)
+library(xgboost)
+options(scipen = 999)

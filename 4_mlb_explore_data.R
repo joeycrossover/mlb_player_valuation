@@ -1,7 +1,10 @@
 source("libraries.R")
 
+# the following code performs data exploration on our MLB player valuation data
+# author: joseph coleman, 5/28/2025
+
 # load the contract year stats (2) data from '3_scrape_accolades.R'
-contract_year_stats <- readxl::read_xlsx("contract_year_stats2.xlsx")
+contract_year_stats <- readxl::read_xlsx("data/contract_year_stats2.xlsx")
 
 # define features
 features <- names(contract_year_stats)[11:ncol(contract_year_stats)]

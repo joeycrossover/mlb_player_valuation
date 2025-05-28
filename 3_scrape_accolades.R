@@ -1,10 +1,16 @@
 source("libraries.R")
 
-# load the contract year stats data from '2_mlb_prep_data.R'
-contract_year_stats <- readxl::read_xlsx("contract_year_stats.xlsx")
+# the following code merges instagram followers for each player and
+# scrapes each player's career accolades from Baseball-Reference
+# and fWAR from FanGraphs
+# the instagram followers were collected manually
+# author: joseph coleman, 5/28/2025
 
-# load ig follower counts workbook
-ig_followers <- readxl::read_xlsx("ig_followers.xlsx")
+# load the contract year stats data from '2_mlb_prep_data.R'
+contract_year_stats <- readxl::read_xlsx("data/contract_year_stats.xlsx")
+
+# load instagram follower counts workbook
+ig_followers <- readxl::read_xlsx("data/ig_followers.xlsx")
 
 contract_year_stats <- merge(contract_year_stats, 
                              ig_followers, 
@@ -215,4 +221,4 @@ contract_year_stats <- merge(contract_year_stats,
                              by.x = c("full_name", "player_id", "year"),
                              by.y = c("full_name" , "mlbid", "season"))
 
-writexl::write_xlsx(contract_year_stats, "contract_year_stats2.xlsx")
+writexl::write_xlsx(contract_year_stats, "data/contract_year_stats2.xlsx")

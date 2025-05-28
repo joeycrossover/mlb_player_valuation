@@ -1,14 +1,19 @@
 source("libraries.R")
 
+# the following code performs data cleaning and transformation on
+# contract data scraped from Spotrac
+# and advanced hitting metrics exported from Baseball Savant
+# author: joseph coleman, 5/28/2025
+
 # this file contains contract details for the 
 # top 100 contracts (value) signed in the MLB
-# must run 'scrape_contract_data.R' to generate
-contracts <- read_xlsx("contracts.xlsx")
+# generated from 'scrape_contract_data.R'
+contracts <- read_xlsx("data/contracts.xlsx")
 
 # this file contains advanced batting statistics and player details
-# from 2015 - 2024 for players that had at least 10 at-bats in a season
+# from 2015 - 2024 for players that had at least 50 at-bats in a season
 # it was generated manually and downloaded from baseballsavant.com
-stats <- read_csv("stats.csv")
+stats <- read_csv("data/stats.csv")
 
 # assumption: start by defining the contract year as the year BEFORE the player signed said contract
 # as we do not want to consider the player's current year's statistics as a predictor for a contract
@@ -194,5 +199,5 @@ contracts %>% filter(!contracts$full_name %in% contract_years$full_name) %>% sel
 # contract_years can be a good starting point for next steps, as it has a row per contract signed per player
 # with the player's contract year statistics as well as career totals and averages
 # up to and including the contract year, and first season to contract season changes in statistics.
-writexl::write_xlsx(career_stats, "career_stats.xlsx")
-writexl::write_xlsx(contract_years, "contract_year_stats.xlsx")
+writexl::write_xlsx(career_stats, "data/career_stats.xlsx")
+writexl::write_xlsx(contract_years, "data/contract_year_stats.xlsx")
