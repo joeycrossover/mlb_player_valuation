@@ -1,11 +1,12 @@
-source("libraries.R")
+source("code/libraries.R")
 
 # the following code uses models previously fit
 # to project new contracts for upcoming free agents
 # author: joseph coleman, 5/28/2025
 
+# load data ----
 # this file contains advanced batting statistics and player details
-# from 2015 to present (5/15/2025) for players that had at least 10 at-bats in a season
+# from 2015 to present (6/10/2025) for players that had at least 10 at-bats in a season
 # it was generated manually and downloaded from baseballsavant.com
 new_stats <- read_csv("data/new_stats.csv")
 
@@ -24,6 +25,19 @@ new_stats$hr_per_ab <- round(new_stats$home_run / new_stats$ab, 4)
 new_stats <- new_stats %>%
   select(2,21,3:6,22,7:20) %>%
   arrange(full_name, year)
+
+new_stats <- new_stats %>%
+  mutate(
+    season_progress = as.numeric(as.Date("2025-06-24") - as.Date("2025-03-27")) / 
+      as.numeric(as.Date("2025-09-29") - as.Date("2025-03-27")),
+    
+    games_on_pace = if_else(year == 2025, round(b_game / season_progress, 0), b_game),
+    ab = if_else(year == 2025, round(ab / b_game * games_on_pace, 0), ab),
+    home_run = if_else(year == 2025, round(home_run / b_game * games_on_pace, 0), home_run),
+    r_total_stolen_base = if_else(year == 2025, round(r_total_stolen_base / b_game * games_on_pace, 0), r_total_stolen_base),
+    b_game = if_else(year == 2025, round(b_game / b_game * games_on_pace, 0), b_game)
+  ) %>%
+  select(-c(season_progress, games_on_pace))
 
 # aggregate each player's statistics by year
 # first get career totals/averages
@@ -111,7 +125,7 @@ new_career_stats <- new_career_stats %>%
   )
 
 # set aside a data frame that has only the rows (years) where a player signed a new contract.
-career_totals <- new_career_stats %>%
+new_contract_year_stats <- new_career_stats %>%
   group_by(full_name) %>%
   filter(year == max(year)) %>%
   ungroup()
@@ -119,14 +133,14 @@ career_totals <- new_career_stats %>%
 # merge instagram followers ----
 new_ig_followers <- readxl::read_xlsx("data/new_ig_followers.xlsx")
 
-career_totals <- merge(career_totals,
-                       new_ig_followers,
-                       by = c("player_id", "full_name"),
-                       all.x = TRUE)
+new_contract_year_stats <- merge(new_contract_year_stats,
+                                 new_ig_followers,
+                                 by = c("player_id", "full_name"),
+                                 all.x = TRUE)
 
 # scrape baseball reference for career accolades ----
 # define player url using baseball-reference's url naming mechanism
-player_urls <- career_totals %>%
+player_urls <- new_contract_year_stats %>%
   mutate(
     clean_name = full_name %>%
       str_remove_all("\\s+(jr|ii|iii|iv)$") %>%         # remove suffixes
@@ -250,14 +264,15 @@ player_data$pos <- ifelse(player_data$pos == "First Baseman", "1B",
                                                                                   ifelse(player_data$pos == "Positions: Catcher and Designated Hitter", "C",
                                                                                          ifelse(player_data$pos == "Positions: Second Baseman and Shortstop", "2B",
                                                                                                 ifelse(player_data$pos == "Positions: Shortstop and Third Baseman", "SS",
-                                                                                                       player_data$pos))))))))))))
+                                                                                                       ifelse(player_data$pos == "Centerfielder", "CF",
+                                                                                                              player_data$pos)))))))))))))
 
-career_totals <- merge(career_totals, player_data, by = c("full_name", "player_id"))
-career_totals <- career_totals %>%
+new_contract_year_stats <- merge(new_contract_year_stats, player_data, by = c("full_name", "player_id"))
+new_contract_year_stats <- new_contract_year_stats %>%
   select(-url) %>%
   select(1:3,pos,4:95,97:105)
 
-career_totals <- career_totals %>%
+new_contract_year_stats <- new_contract_year_stats %>%
   rename_with(
     .cols = 97:ncol(.),
     .fn = ~ str_replace_all(tolower(.x), "\\s+", "_")
@@ -268,11 +283,11 @@ career_totals <- career_totals %>%
 fangraphs_id <- readxl::read_xlsx("data/fangraphs_id.xlsx")
 fangraphs_id <- fangraphs_id %>%
   select(MLBID, IDFANGRAPHS) %>%
-  filter(MLBID %in% career_totals$player_id) %>%
+  filter(MLBID %in% new_contract_year_stats$player_id) %>%
   distinct(MLBID, .keep_all = TRUE)
 
 # which players are missing?
-career_totals %>% filter(!player_id %in% fangraphs_id$MLBID) %>% select(player_id, full_name)
+new_contract_year_stats %>% filter(!player_id %in% fangraphs_id$MLBID) %>% select(player_id, full_name)
 
 missing_fangraph_ids <- tribble(
   ~MLBID,     ~IDFANGRAPHS,
@@ -286,7 +301,7 @@ missing_fangraph_ids <- tribble(
 
 fangraphs_id <- rbind(fangraphs_id, missing_fangraph_ids)
 fangraphs_id <- merge(fangraphs_id,
-                      career_totals %>% select(player_id, full_name),
+                      new_contract_year_stats %>% select(player_id, full_name),
                       by.x = "MLBID",
                       by.y = "player_id")
 
@@ -309,13 +324,13 @@ get_fwar <- function(fg_id) {
   url <- paste0(
     "https://www.fangraphs.com/api/players/stats?playerid=",
     fg_id,
-    "&position=all&stats=bat&season=2024&season1=2015&type=0&split=season"
+    "&position=all&stats=bat&season=2025&season1=2015&type=0&split=season"
   )
 
   tryCatch({
     res <- jsonlite::fromJSON(url)
     res$data %>%
-      filter(AbbLevel == "MLB", sortSeason >= 2020, sortSeason <= 2025, !is.na(WAR)) %>%
+      filter(AbbLevel == "MLB", sortSeason >= 2015, sortSeason <= 2025, !is.na(WAR)) %>%
       select(season = sortSeason, WAR)
   }, error = function(e) {
     warning(paste("Failed to fetch data for player", fg_id, ":", e$message))
@@ -328,7 +343,7 @@ fwar_df <- bind_rows(fwar_list, .id = "row_index") %>%
   mutate(IDFANGRAPHS = fangraphs_id$IDFANGRAPHS[as.integer(row_index)]) %>%
   select(IDFANGRAPHS, season, WAR)
 fwar_df <- merge(fwar_df, fangraphs_id, by = "IDFANGRAPHS")
-fwar_df <- merge(fwar_df, career_totals %>% select(player_id, full_name, year),
+fwar_df <- merge(fwar_df, new_contract_year_stats %>% select(player_id, full_name, year),
                  by.x = c("MLBID", "full_name"),
                  by.y = c("player_id", "full_name")) %>%
   filter(season <= year)
@@ -352,96 +367,314 @@ contract_fwar <- career_fwar %>%
 
 contract_fwar$season <- as.numeric(contract_fwar$season)
 
-career_totals <- merge(career_totals,
-                       contract_fwar,
-                       by.x = c("full_name", "player_id", "year"),
-                       by.y = c("full_name" , "mlbid", "season"))
+new_contract_year_stats <- merge(new_contract_year_stats,
+                                 contract_fwar,
+                                 by.x = c("full_name", "player_id", "year"),
+                                 by.y = c("full_name" , "mlbid", "season"))
 
 # normalization ----
-# define features
-# contract_year_stats <- readxl::read_xlsx("data/contract_year_stats2.xlsx")
-# contract_year_stats <- fastDummies::dummy_cols(contract_year_stats, select_columns = "pos", remove_first_dummy = TRUE)
-# contract_year_stats[, 103:117] <- contract_year_stats[, 103:117] %>%
-#   mutate(across(everything(), ~replace_na(., 0)))
-contract_year_stats$df <- "original"
+scaling_means <- readRDS("models/scaling_means.rds")
+scaling_sds <- readRDS("models/scaling_sds.rds")
+centroids <- readRDS("models/kmeans_centroids.rds")
 
-career_totals <- fastDummies::dummy_cols(career_totals, select_columns = "pos", remove_first_dummy = TRUE)
-career_totals$df <- "new"
+cluster_features <- colnames(centroids)
 
-all_players <- bind_rows(contract_year_stats, career_totals)
+missing_features <- setdiff(cluster_features, names(new_contract_year_stats))
+if (length(missing_features) > 0) {
+  new_contract_year_stats[missing_features] <- 0
+  message("Added missing features: ", paste(missing_features, collapse = ", "))
+}
 
-features <- names(all_players)[11:128]
+new_contract_year_stats <- new_contract_year_stats[, c(names(new_contract_year_stats)[1:4], cluster_features)]
+
+new_features <- names(new_contract_year_stats)[5:ncol(new_contract_year_stats)]
 
 # normalize features using z-score standardization (for modeling)
-new_scaled_df <- all_players %>%
-  select(all_of(features)) %>%
-  replace(is.na(.), 0) %>%
-  mutate(across(everything(), ~scale(.)[,1])) # scale() returns a matrix; we grab the vector
+new_scaled_df <- map_dfc(new_features, function(feature) {
+  x <- new_contract_year_stats[[feature]]
+  x[is.na(x)] <- 0  # handle NAs first
+  
+  mean_val <- scaling_means[[feature]]
+  sd_val <- scaling_sds[[feature]]
+  
+  if (is.na(mean_val) || is.na(sd_val) || sd_val == 0) {
+    x_scaled <- rep(0, length(x))  # or NA or original value
+  } else {
+    x_scaled <- (x - mean_val) / sd_val
+  }
+  
+  setNames(as_tibble(x_scaled), feature)
+})
 
 # combine normalized features with player info
 new_normalized_df <- bind_cols(
-  all_players %>% select(129, 1:10),
+  new_contract_year_stats %>% select(1:4),
   new_scaled_df
 )
 
+# clustering ----
+assign_clusters <- function(new_data, centroids) {
+  dist_mat <- as.matrix(dist(rbind(centroids, new_data)))
+  dist_to_centroids <- dist_mat[(nrow(centroids) + 1):nrow(dist_mat), 1:nrow(centroids)]
+  cluster_assignment <- apply(dist_to_centroids, 1, which.min)
+  return(cluster_assignment)
+}
+
+new_clusters <- assign_clusters(new_normalized_df[, 5:ncol(new_normalized_df)], centroids)
+
+# Add the cluster assignments to your dataframe
+new_cluster_df <- new_contract_year_stats %>%
+  mutate(cluster = new_clusters) %>%
+  select(cluster, everything())
+
+new_cluster_df %>% group_by(cluster) %>% summarise(count = n())
+
+# based on the cluster summary, we can come up with some player prototypes and create a named vector 
+# to map cluster numbers to the labels we come up with
+cluster_labels <- c(
+  "1" = "all-star veterans",
+  "2" = "franchise superstars",
+  "3" = "young with upside",
+  "4" = "high-floor contributors",
+  "5" = "power-first sluggers"
+)
+
+new_cluster_df$cluster_label <- cluster_labels[as.character(new_cluster_df$cluster)]
+
+new_normalized_cluster_df <- new_normalized_df %>%
+  mutate(cluster = new_clusters) %>%
+  select(cluster, everything())
+
+new_normalized_cluster_df$cluster_label <- cluster_labels[as.character(new_normalized_cluster_df$cluster)]
+
+new_cluster_df <- new_cluster_df %>% select(full_name, cluster_label, everything())
+new_normalized_cluster_df <- new_normalized_cluster_df %>% select(full_name, cluster_label, everything())
+
+writexl::write_xlsx(new_cluster_df, "data/new_cluster_df.xlsx")
+writexl::write_xlsx(new_normalized_cluster_df, "data/new_normalized_cluster_df.xlsx")
+
 # model with new players ----
-# load the normalized contract year stats from '6_mlb_player_valuation.R'
-# normalized_df <- readxl::read_xlsx("data/normalized_contract_year_stats.xlsx")
+selected_value_features <- readRDS("models/selected_value_features.rds")
+selected_length_features <- readRDS("models/selected_length_features.rds")
+multivariate_features <- unique(c(selected_length_features, selected_value_features))
+normalized_cluster_df <- read_xlsx("data/normalized_cluster_df.xlsx")
+cluster_df <- read_xlsx("data/cluster_df.xlsx")
 
-train_data <- normalized_df
-test_data <- new_normalized_df %>%
-  filter(df == "new") %>%
-  select(-df)
+cluster_df <- fastDummies::dummy_cols(cluster_df, select_columns = "pos")
+cluster_df <- fastDummies::dummy_cols(cluster_df, select_columns = "cluster")
+normalized_cluster_df <- fastDummies::dummy_cols(normalized_cluster_df, select_columns = "pos")
+normalized_cluster_df <- fastDummies::dummy_cols(normalized_cluster_df, select_columns = "cluster")
+new_normalized_cluster_df <- fastDummies::dummy_cols(new_normalized_cluster_df, select_columns = "pos")
+new_normalized_cluster_df <- fastDummies::dummy_cols(new_normalized_cluster_df, select_columns = "cluster")
+new_cluster_df <- fastDummies::dummy_cols(new_cluster_df, select_columns = "pos")
+new_cluster_df <- fastDummies::dummy_cols(new_cluster_df, select_columns = "cluster")
 
-# model 1: linear regression with correlated features only
-set.seed(123)
-new_lmlc_df_train <- train_data %>% select(yrs, all_of(selected_length_features))
-new_lmlc <- lm(yrs ~ ., data = new_lmlc_df_train)
+train_long <- normalized_cluster_df %>%
+  select(all_of(multivariate_features)) %>%
+  mutate(source = "train") %>%
+  pivot_longer(cols = -source, names_to = "feature", values_to = "value")
 
-new_lmlc_df_test <- test_data %>% select(all_of(selected_length_features))
-test_data$lmlc_pred <- predict(new_lmlc, newdata = new_lmlc_df_test)
-test_data$lmlc_pred <- pmax(test_data$lmlc_pred, min_years)
+test_long <- new_normalized_cluster_df %>%
+  select(all_of(multivariate_features)) %>%
+  mutate(source = "new") %>%
+  pivot_longer(cols = -source, names_to = "feature", values_to = "value")
 
-new_mlmv_df_train <- train_data %>% select(yrs, value, multivariate_features[multivariate_features %in% names(test_data)])
-new_mlmv <- lm(cbind(yrs, value) ~ ., data = new_mlmv_df_train)
+combined_long <- bind_rows(train_long, test_long)
 
-new_mlmv_df_test <- test_data %>% select(all_of(multivariate_features[multivariate_features %in% names(test_data)]))
-new_mlmv_pred <- predict(new_mlmv, newdata = new_mlmv_df_test)
+# Plot
+ggplot(combined_long, aes(x = value, fill = source)) +
+  geom_density(alpha = 0.5) +
+  facet_wrap(~feature, scales = "free", ncol = 4) +
+  theme_minimal() +
+  labs(title = "Distribution of Features: Training vs. New Data",
+       x = "Normalized Value",
+       fill = "Source")
 
-test_data$mlmv_pred <- new_mlmv_pred[, 2]
+project_spotrac_style <- function(new_player,
+                                  comps_df,
+                                  age_tolerance = 2,
+                                  store_name = NULL,
+                                  stat_features = c("career_avg_war", "career_xwoba", "career_woba",
+                                               "career_xobp", "career_xslg", "career_avg_hr", "season_avg_war")) {
+  
+  important_features <- c("career_avg_war", "career_xwoba", "career_woba")
+  weights <- setNames(rep(1, length(stat_features)), stat_features)
+  weights[important_features] <- 3
+  
+  cluster_val <- new_player$cluster
+  pos_val <- new_player$pos
+  age_val <- new_player$player_age
+  
+  player_comps <- comps_df %>%
+    filter(cluster == cluster_val & abs(player_age - age_val) <= age_tolerance)
+  
+  if (pos_val %in% c("C", "DH")) {
+    player_comps <- player_comps %>% filter(pos == pos_val)
+  }
+  
+  if (nrow(player_comps) > 5) {
+    player_vec <- as.numeric(new_player[, stat_features])
+    comp_mat <- player_comps[, stat_features] %>% as.matrix()
+    distances <- apply(comp_mat, 1, function(x) sqrt(sum((x - player_vec)^2, na.rm = TRUE)))
+    player_comps <- player_comps %>%
+      mutate(similarity_dist = distances) %>%
+      arrange(similarity_dist) %>%
+      slice_head(n = 5)
+  }
+  
+  if (nrow(player_comps) < 3) {
+    for (tol in (age_tolerance + 1):5) {
+      player_comps <- comps_df %>%
+        filter(cluster == cluster_val & abs(player_age - age_val) <= tol)
+      if (nrow(player_comps) >= 3) break
+    }
+  }
+  
+  if (nrow(player_comps) < 3) return(list(proj_yrs = NA, proj_value = NA))
+  
+  pct_diffs <- map_dbl(
+    stat_features,
+    function(f) {
+      comp_vals <- player_comps[[f]]
+      player_val <- new_player[[f]]
+      diffs <- (player_val - comp_vals) / abs(comp_vals)
+      mean(diffs, na.rm = TRUE) * weights[[f]]
+    }
+  ) %>% set_names(stat_features)
+  
+  pct_diffs <- pct_diffs[is.finite(pct_diffs)]
+  remaining_features <- names(pct_diffs)
+  used_weights <- weights[remaining_features]
+  avg_change <- weighted.mean(pct_diffs, w = used_weights, na.rm = TRUE)
+  
+  base_yrs <- mean(player_comps$yrs, na.rm = TRUE)
+  base_val <- mean(player_comps$value, na.rm = TRUE)
+  
+  proj_yrs <- round(base_yrs * (1 + avg_change))
+  proj_value <- round(base_val * (1 + avg_change), 1)
+  
+  if (!is.null(store_name)) {
+    comps_out <- player_comps %>%
+      select(full_name, player_age, pos, yrs, value, all_of(stat_features))
+    
+    comp_avgs <- comps_out %>%
+      summarise(across(c(yrs, value, all_of(stat_features)), ~mean(.x, na.rm = TRUE)))
+    
+    pct_diffs_row <- map_dbl(
+      stat_features,
+      function(f) {
+        comp_mean <- comp_avgs[[f]]
+        player_val <- new_player[[f]]
+        if (is.na(comp_mean) || comp_mean == 0) return(NA_real_)
+        (player_val - comp_mean) / abs(comp_mean)
+      }
+    )
+    names(pct_diffs_row) <- stat_features
+    
+    projection_row <- tibble(
+      full_name = "Projection/Comps",
+      player_age = age_val,
+      pos = pos_val,
+      yrs = proj_yrs,
+      value = proj_value
+    ) %>%
+      bind_cols(as_tibble_row(pct_diffs_row))
+    
+    player_row <- new_player %>%
+      select(all_of(stat_features)) %>%
+      mutate(full_name = store_name,
+             player_age = age_val,
+             pos = pos_val,
+             yrs = NA, value = NA) %>%
+      select(full_name, player_age, pos, yrs, value, all_of(stat_features))
+    
+    comp_log_tbl <- bind_rows(
+      comps_out,
+      comp_avgs %>% mutate(full_name = "Base/Averages", player_age = NA, pos = NA),
+      player_row,
+      projection_row
+    )
+    
+    if (!exists("player_comp_tables", envir = .GlobalEnv)) {
+      assign("player_comp_tables", list(), envir = .GlobalEnv)
+    }
+    comp_log <- get("player_comp_tables", envir = .GlobalEnv)
+    comp_log[[store_name]] <- comp_log_tbl
+    assign("player_comp_tables", comp_log, envir = .GlobalEnv)
+  }
+  
+  return(list(proj_yrs = proj_yrs, proj_value = proj_value))
+}
 
-test_data$mlmv_pred <- pmax(test_data$mlmv_pred, min_salary)
+# Run for all players
+results <- map_dfr(
+  1:nrow(new_cluster_df),
+  function(i) {
+    player <- new_cluster_df[i, ]
+    res <- project_spotrac_style(
+      new_player = player,
+      comps_df = cluster_df,
+      store_name = player$full_name
+    )
+    tibble(full_name = player$full_name, proj_yrs = res$proj_yrs, proj_value = res$proj_value)
+  }
+)
 
-new_predicted_lmlc <- test_data$lmlc_pred
-new_predicted_mlmv <- test_data$mlmv_pred
+new_cluster_df <- left_join(new_cluster_df, results, by = "full_name") %>%
+  mutate(proj_aav = round(proj_value / proj_yrs, 1))
 
-predicted_aav <- new_predicted_mlmv / new_predicted_lmlc
-test_data$predicted_aav <- predicted_aav
-new_final_results <- test_data %>% select(1:4, lmlc_pred, mlmv_pred, predicted_aav, multivariate_features[multivariate_features %in% names(test_data)]) %>%
-  mutate(mlmv_pred = round(mlmv_pred / 1000000, 1),
-         lmlc_pred = round(lmlc_pred),
-         predicted_aav = round(predicted_aav / 1000000, 1))
+# Write to Excel with formatting
+wb <- createWorkbook()
+for (name in names(player_comp_tables)) {
+  sheet_data <- player_comp_tables[[name]]
+  safe_name <- str_trunc(make.names(name), 31)
+  addWorksheet(wb, safe_name)
+  stat_cols <- which(names(sheet_data) %in% c("career_avg_war", "career_xwoba", "career_woba",
+                                              "career_xobp", "career_xslg", "career_avg_hr", "season_avg_war"))
+  sheet_data <- sheet_data %>%
+    mutate(
+      yrs = round(yrs),
+      value = round(value / 1e6, 1),
+      across(all_of(stat_cols), ~ round(.x, 3))
+    )
+  writeData(wb, sheet = safe_name, x = sheet_data)
+  
+  
+  for (col in stat_cols) {
+    conditionalFormatting(
+      wb, sheet = safe_name,
+      cols = col, rows = nrow(sheet_data) + 1,
+      rule = ">=0", style = createStyle(fontColour = "#006100", bgFill = "#C6EFCE")
+    )
+    conditionalFormatting(
+      wb, sheet = safe_name,
+      cols = col, rows = nrow(sheet_data) + 1,
+      rule = "<0", style = createStyle(fontColour = "#9C0006", bgFill = "#FFC7CE")
+    )
+  }
+}
 
+saveWorkbook(wb, "data/player_comps_output.xlsx", overwrite = TRUE)
 
-ggplot(new_final_results, aes(x = lmlc_pred, y = mlmv_pred, color = mlmv_pred / lmlc_pred)) +
-  geom_point(size = 3, alpha = 0.9) +
-  geom_text_repel(
-    aes(label = full_name),
-    size = 4,
-    box.padding = 0.35,
-    point.padding = 0.4,
-    segment.color = "gray60",
-    max.overlaps = 15
-  ) +
-  colorspace::scale_color_continuous_sequential(name = "AAV", palette = "Batlow") +
+new_contract_projections <- new_cluster_df %>% 
+  select(1, 2, 6, proj_yrs, proj_value, proj_aav, career_avg_war, career_xwoba, career_woba,
+         career_xobp, career_xslg, career_avg_hr, season_avg_war)
+
+new_contract_projections <- new_contract_projections %>%
+  mutate(proj_value = round(proj_value / 1e6, 1),
+         proj_aav = round(proj_aav / 1e6, 1))
+
+writexl::write_xlsx(new_contract_projections, "data/new_contract_projections.xlsx")
+
+new_contract_projections %>%
+  mutate(full_name = fct_reorder(full_name, proj_value)) %>%
+  ggplot(aes(x = full_name, y = proj_value, fill = cluster_label)) +
+  geom_col() +
+  coord_flip() +
   labs(
-    x = "Predicted Contract Length (Years)",
-    y = "Predicted Contract Value (Millions USD)",
-    title = "Projected MLB Contracts: Length vs Value"
+    x = "Player",
+    y = "Projected Value (M USD)",
+    title = "Projected Value by Player",
+    fill = "Cluster"
   ) +
-  theme_minimal(base_size = 14) +
-  theme(
-    plot.title = element_text(face = "bold"),
-    plot.subtitle = element_text(margin = margin(b = 10)),
-    legend.position = "right"
-  )
+  theme_minimal()

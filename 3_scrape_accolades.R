@@ -1,4 +1,4 @@
-source("libraries.R")
+source("code/libraries.R")
 
 # the following code merges instagram followers for each player and
 # scrapes each player's career accolades from Baseball-Reference
@@ -6,17 +6,20 @@ source("libraries.R")
 # the instagram followers were collected manually
 # author: joseph coleman, 5/28/2025
 
+# load data ----
 # load the contract year stats data from '2_mlb_prep_data.R'
 contract_year_stats <- readxl::read_xlsx("data/contract_year_stats.xlsx")
 
 # load instagram follower counts workbook
 ig_followers <- readxl::read_xlsx("data/ig_followers.xlsx")
 
+# merge instagram followers ----
 contract_year_stats <- merge(contract_year_stats, 
                              ig_followers, 
                              by = c("player_id", "full_name"),
                              all.x = TRUE)
 
+# scrape career accolades ----
 # scrape baseball reference for career accolades
 # define player url using baseball-reference's url naming mechanism
 player_urls <- contract_year_stats %>%
@@ -132,6 +135,7 @@ contract_year_stats <- contract_year_stats %>%
     .fn = ~ str_replace_all(tolower(.x), "\\s+", "_")
   )
 
+# scrape fWAR ----
 # load the fangraphs id workbook 'fangraphs_id.xlsx'
 fangraphs_id <- readxl::read_xlsx("fangraphs_id.xlsx")
 fangraphs_id <- fangraphs_id %>%
@@ -221,4 +225,5 @@ contract_year_stats <- merge(contract_year_stats,
                              by.x = c("full_name", "player_id", "year"),
                              by.y = c("full_name" , "mlbid", "season"))
 
-writexl::write_xlsx(contract_year_stats, "data/contract_year_stats2.xlsx")
+# save data ----
+writexl::write_xlsx(contract_year_stats, "data/contract_year_stats.xlsx")

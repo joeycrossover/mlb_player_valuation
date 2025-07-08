@@ -1,4 +1,4 @@
-source("libraries.R")
+source("code/libraries.R")
 
 # the following code runs correlation analysis to identify
 # potential features with predictive power
@@ -6,19 +6,25 @@ source("libraries.R")
 # to project player contract terms
 # author: joseph coleman, 5/28/2025
 
-# load the contract year stats (2) data from '3_scrape_accolades.R'
-contract_year_stats <- readxl::read_xlsx("data/contract_year_stats2.xlsx")
-contract_year_stats <- fastDummies::dummy_cols(contract_year_stats, select_columns = "pos", remove_first_dummy = TRUE)
-contract_year_stats[, 103:117] <- contract_year_stats[, 103:117] %>%
+# load data ----
+# load the cluster_df data from '5_mlb_player_clustering.R'
+cluster_df <- readxl::read_xlsx("data/cluster_df.xlsx")
+cluster_df <- fastDummies::dummy_cols(cluster_df, select_columns = "pos")
+cluster_df <- fastDummies::dummy_cols(cluster_df, select_columns = "cluster")
+cluster_df[, 105:119] <- cluster_df[, 105:119] %>%
   mutate(across(everything(), ~replace_na(., 0)))
 
 # load the normalized contract year stats from '5_mlb_player_clustering.R'
-normalized_df <- readxl::read_xlsx("data/normalized_contract_year_stats.xlsx")
+normalized_cluster_df <- readxl::read_xlsx("data/normalized_cluster_df.xlsx")
+normalized_cluster_df <- fastDummies::dummy_cols(normalized_cluster_df, select_columns = "pos")
+normalized_cluster_df <- fastDummies::dummy_cols(normalized_cluster_df, select_columns = "cluster")
+normalized_cluster_df[, 105:119] <- normalized_cluster_df[, 105:119] %>%
+  mutate(across(everything(), ~replace_na(., 0)))
 
-# Correlation Analysis ----
+# correlation analysis ----
 # lets measure which variables have strongest linear correlation to our target variables (value and yrs)
-numeric_vars <- contract_year_stats %>%
-  select(where(is.numeric))
+numeric_vars <- cluster_df %>%
+  select(10:ncol(cluster_df))
 
 # get correlation matrix with target variable
 correlations <- cor(numeric_vars, use = "complete.obs")
@@ -29,15 +35,18 @@ correlations_with_value$feature <- rownames(correlations_with_value)
 colnames(correlations_with_value)[1] <- "correlation"
 
 top_corr_value_features <- correlations_with_value %>%
-  dplyr::slice(c(5:19, 121:125))
+  dplyr::slice(c(4:19, 121:127))
 
 # plot
 ggplot(top_corr_value_features, aes(x = reorder(feature, correlation), y = correlation)) +
   geom_col(fill = "steelblue") +
   coord_flip() +
-  labs(title = "Top Features Correlated with Contract Value",
-       x = "Feature",
-       y = "Correlation with Contract Value") +
+  scale_y_continuous(limits = c(-0.5, 0.75)) +
+  labs(
+    title = "Top Features Correlated with Contract Value",
+    x = "Feature",
+    y = "Correlation with Contract Value"
+  ) +
   theme_minimal(base_size = 14)
 
 # view sorted correlations with 'years'
@@ -46,7 +55,7 @@ correlations_with_length$feature <- rownames(correlations_with_length)
 colnames(correlations_with_length)[1] <- "correlation"
 
 top_corr_length_features <- correlations_with_length %>%
-  dplyr::slice(c(4:5, 7:14, 118:122, 125))
+  dplyr::slice(c(3:4, 6:14, 119:127))
 
 # player_age
 # -0.4599379544
@@ -55,12 +64,13 @@ top_corr_length_features <- correlations_with_length %>%
 ggplot(top_corr_length_features, aes(x = reorder(feature, correlation), y = correlation)) +
   geom_col(fill = "steelblue") +
   coord_flip() +
+  scale_y_continuous(limits = c(-0.5, 0.75)) +
   labs(title = "Top Features Correlated with Contract Length",
        x = "Feature",
        y = "Correlation with Contract Length") +
   theme_minimal(base_size = 14)
 
-# Modeling ----
+# modeling ----
 set.seed(123)
 
 min_salary <- 760000
@@ -76,15 +86,17 @@ r2_manual <- function(actual, predicted) {
 }
 
 # let's train on players that signed contracts before 2025
-train_data <- normalized_df %>% filter(start < 2025)
+train_data <- normalized_cluster_df %>% filter(start < 2025)
 
 # and we'll test on the players that just signed deals this year
 # ends up being about a 75/25 split, which is cool
-test_data <- normalized_df %>% filter(start >= 2025)
+test_data <- normalized_cluster_df %>% filter(start >= 2025)
 
 # model 1: linear regression with correlated features only
 selected_value_features <- rownames(top_corr_value_features)
 selected_length_features <- rownames(top_corr_length_features)
+saveRDS(selected_value_features, "models/selected_value_features.rds")
+saveRDS(selected_length_features, "models/selected_length_features.rds")
 
 lmlc_df_train <- train_data %>% select(yrs, all_of(selected_length_features))
 lmlc <- lm(yrs ~ ., data = lmlc_df_train)
@@ -99,7 +111,7 @@ train_data$lmvc_pred <- pmax(train_data$lmvc_pred, min_salary)
 # model 2: lasso regression (directly)
 y_train_value <- train_data$value
 y_train_length <- train_data$yrs
-x_train <- as.matrix(train_data[, 11:128])
+x_train <- as.matrix(train_data[, 13:136])
 
 lasso_length_cv <- cv.glmnet(x_train, y_train_length, alpha = 1, nfolds = 10)
 best_lambda_length <- lasso_length_cv$lambda.min
@@ -278,7 +290,7 @@ test_data$lmvc_pred <- predict(lmvc, newdata = lmvc_df_test)
 test_data$lmvc_pred <- pmax(test_data$lmvc_pred, min_salary)
 
 # model 2
-x_test <- as.matrix(test_data[, 11:128])
+x_test <- as.matrix(test_data[, 13:136])
 test_data$glml_pred <- predict(glml, s = best_lambda_length, newx = x_test)
 test_data$glmv_pred <- predict(glmv, s = best_lambda_value, newx = x_test)
 
@@ -359,68 +371,149 @@ test_performance_summary <- data.frame(
 )
 
 # plot actuals vs predictions
-actual_length <- c(train_data$yrs, test_data$yrs)
-actual_value <- c(train_data$value, test_data$value)
+actual_length <- test_data$yrs
+actual_value <- test_data$value
 
-predicted_lmlc <- c(train_data$lmlc_pred, test_data$lmlc_pred)
-predicted_mlmv <- c(train_data$mlmv_pred, test_data$mlmv_pred)
+proj_yrs <- test_data$lmlc_pred
+proj_value <- test_data$mlmv_pred
 
-v_residuals <- actual_value - predicted_mlmv
-threshold_25pct <- 0.25 * actual_value
-classification <- ifelse(
-  v_residuals > threshold_25pct, "Overvalued",
-  ifelse(v_residuals < -threshold_25pct, "Undervalued",
-         "Fair Value")
+v_residuals <- actual_value - proj_value
+classification <- case_when(
+  actual_value < 50 ~ ifelse(abs(v_residuals) < 0.5 * actual_value, "fair value",
+                      ifelse(v_residuals < 0, "undervalued", "overvalued")),
+  actual_value < 150 ~ ifelse(abs(v_residuals) < 0.35 * actual_value, "fair value",
+                       ifelse(v_residuals < 0, "undervalued", "overvalued")),
+  TRUE ~ ifelse(abs(v_residuals) < 0.25 * actual_value, "fair value",
+                ifelse(v_residuals < 0, "undervalued", "overvalued"))
 )
 
-final_results <- rbind(train_data, test_data)
-final_results$classification <- classification
-predicted_aav <- predicted_mlmv / predicted_lmlc
-final_results$predicted_aav <- predicted_aav
-final_results <- final_results %>% select(1:10, lmlc_pred, mlmv_pred, predicted_aav, classification, multivariate_features) %>%
+results_df <- test_data
+results_df$classification <- classification
+proj_aav <- proj_value / proj_yrs
+results_df$proj_aav <- proj_aav
+results_df <- results_df %>% select(1:12, lmlc_pred, mlmv_pred, proj_aav, classification, multivariate_features) %>%
   mutate(value = value / 1000000,
          aav = round(aav / 1000000, 1),
          mlmv_pred = round(mlmv_pred / 1000000, 1),
          lmlc_pred = round(lmlc_pred),
-         predicted_aav = round(predicted_aav / 1000000, 1))
+         proj_aav = round(proj_aav / 1000000, 1)) %>%
+  rename("proj_yrs" = lmlc_pred,
+         "proj_value" = mlmv_pred)
 
-ggplot(final_results, aes(x = value, y = mlmv_pred, color = classification)) +
-  geom_point() +
-  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
-  labs(x = "Actual Contract Value (millions)", y = "Predicted Contract Value (millions)", title = "Actual vs Predicted Values (All Players)") +
-  scale_color_manual(values = c(
-    "Fair Value" = "blue",
-    "Undervalued" = "green",
-    "Overvalued" = "red"
-  )) +
-  theme_minimal()
+ribbon_data <- bind_rows(
+  data.frame(value = seq(0, 50, by = 2)) %>%
+    mutate(lower = value * 0.5, upper = value * 1.5),
+  data.frame(value = seq(50, 150, by = 2)) %>%
+    mutate(lower = value * 0.65, upper = value * 1.35),
+  data.frame(value = seq(150, 800, by = 2)) %>%
+    mutate(lower = value * 0.75, upper = value * 1.25)
+)
 
-test_results <- final_results %>%
-  filter(start >= 2025)
+label_subset <- results_df %>%
+  group_by(classification) %>%
+  slice_max(order_by = value, n = 3) %>%
+  pull(full_name)
 
-highlight_players <- c("jackson merrill", "juan soto", "christian walker", "geraldo perdomo")  # change these to your players of interest
-
-ggplot(test_results, aes(x = value, y = mlmv_pred, color = classification, label = full_name)) +
-  geom_point(size = 2) +
-  geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+ggplot(results_df %>% rename(Classification = classification), aes(x = value, y = proj_value, color = Classification)) +
+  geom_ribbon(
+    data = ribbon_data,
+    aes(x = value, ymin = lower, ymax = upper),
+    fill = "grey80", alpha = 0.3, inherit.aes = FALSE
+  ) +
   ggrepel::geom_text_repel(
-    data = subset(test_results, full_name %in% highlight_players),
+    data = subset(results_df %>% rename(Classification = classification), full_name %in% label_subset),
+    aes(label = full_name),
     size = 3.5,
     show.legend = FALSE,
-    max.overlaps = 30,
-    box.padding = 0.35,
-    point.padding = 0.5,
-    segment.color = 'grey50'
+    max.overlaps = 25,
+    box.padding = 0.3,
+    point.padding = 0.3,
+    segment.color = 'grey60'
   ) +
+  geom_point(size = 2, stroke = 0.5, alpha = 0.85) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "black") +
   labs(
     x = "Actual Contract Value (millions)",
     y = "Predicted Contract Value (millions)",
-    title = "Actual vs Predicted Contract Value (Test Set)",
-    color = "Valuation"
+    title = "Actual vs Predicted Contract Value (2025 Signees)",
+    subtitle = "Tiered error bands: ±50% (under $50M), ±35% ($50–150M), ±25% (over $150M)"
   ) +
   scale_color_manual(values = c(
-    "Fair Value" = "blue",
-    "Undervalued" = "green",
-    "Overvalued" = "red"
+    "fair value" = "blue",
+    "undervalued" = "darkgreen",
+    "overvalued" = "red"
   )) +
+  scale_x_continuous(limits = c(0, 800), breaks = c(0, 100, 200, 300, 400, 500, 600, 700, 800)) +
+  scale_y_continuous(limits = c(0, 800), breaks = c(0, 100, 200, 300, 400, 500, 600, 700, 800)) +
   theme_minimal()
+
+results_df <- results_df %>% select(1:16) %>%
+  merge(., cluster_df %>% select(player_id, all_of(multivariate_features)), by = "player_id")
+
+writexl::write_xlsx(results_df, "data/test_contract_projections.xlsx")
+
+valuation_summary <- results_df %>%
+  select(classification, 10:15, 17:ncol(results_df)) %>%
+  group_by(classification) %>%
+  summarise(across(everything(), mean, na.rm = TRUE))
+
+writexl::write_xlsx(valuation_summary, "data/test_valuation_summary.xlsx")
+
+features_to_plot <- c(
+  "career_avg_war", "career_woba", "career_xwoba",
+  "silver_slugger", "all-star", "career_avg_hr", "player_age", "delta_ab"
+)
+
+# Reshape to long format for ggplot
+melted_results <- valuation_summary %>%
+  select(classification, all_of(features_to_plot)) %>%
+  pivot_longer(-classification, names_to = "feature", values_to = "average")
+
+# Plot
+# ggplot(melted_results, aes(x = average, y = feature, fill = classification)) +
+#   geom_col(position = "dodge") +
+#   labs(
+#     title = "Feature Averages by Player Valuation (Test Set)",
+#     x = "Average Value",
+#     y = "Feature"
+#   ) +
+#   theme_minimal(base_size = 14) +
+#   scale_fill_manual(values = c(
+#     "undervalued" = "darkgreen",
+#     "fair value" = "blue",
+#     "overvalued" = "red"
+#   ))
+
+melted_scaled <- melted_results %>%
+  group_by(feature) %>%
+  mutate(
+    z_score = (average - mean(average)) / sd(average),
+    scaled_value = z_score - min(z_score) + 0.01  # ensure strictly > 0
+  ) %>%
+  ungroup()
+
+ggplot(melted_results, aes(x = classification, y = average, fill = classification)) +
+  geom_col(position = "dodge", width = 0.6) +
+  geom_text(
+    aes(label = round(average, 2)),
+    position = position_dodge(width = 0.6),
+    vjust = 1.5,
+    color = "white",
+    size = 3.5
+  ) +
+  facet_wrap(~ feature, scales = "free_y") +
+  labs(
+    title = "Average Feature Values by Player Valuation (Test Set)",
+    x = "Player Valuation",
+    y = "Average Value"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    legend.position = "none"
+  ) +
+  scale_fill_manual(values = c(
+    "undervalued" = "darkgreen",
+    "fair value" = "blue",
+    "overvalued" = "red"
+  ))

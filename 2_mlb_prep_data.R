@@ -1,10 +1,11 @@
-source("libraries.R")
+source("code/libraries.R")
 
 # the following code performs data cleaning and transformation on
 # contract data scraped from Spotrac
 # and advanced hitting metrics exported from Baseball Savant
 # author: joseph coleman, 5/28/2025
 
+# load data ----
 # this file contains contract details for the 
 # top 100 contracts (value) signed in the MLB
 # generated from 'scrape_contract_data.R'
@@ -15,6 +16,7 @@ contracts <- read_xlsx("data/contracts.xlsx")
 # it was generated manually and downloaded from baseballsavant.com
 stats <- read_csv("data/stats.csv")
 
+# clean and merge data ----
 # assumption: start by defining the contract year as the year BEFORE the player signed said contract
 # as we do not want to consider the player's current year's statistics as a predictor for a contract
 # they've already signed
@@ -79,6 +81,7 @@ stats$full_name <- ifelse(stats$full_name == "george springer iii",
 stats_all <- merge(stats, contracts, by.x = c("full_name", "year"), by.y = c("full_name", "contract_year"), all.x = TRUE)
 stats_all <- merge(stats_all, contracts %>% select(full_name, contract_year), by = "full_name", all.x = TRUE)
 
+# calculate career aggregations and year-to-year changes ---- 
 # calculate a hr/ab stat
 stats_all$hr_per_ab <- round(stats_all$home_run / stats_all$ab, 4)
 
@@ -196,8 +199,8 @@ contracts %>% filter(!contracts$full_name %in% contract_years$full_name) %>% sel
 # so we need to manually change his contract year to 2022
 # going to do this up top in my original contracts df
 
+# save data ----
 # contract_years can be a good starting point for next steps, as it has a row per contract signed per player
 # with the player's contract year statistics as well as career totals and averages
 # up to and including the contract year, and first season to contract season changes in statistics.
-writexl::write_xlsx(career_stats, "data/career_stats.xlsx")
 writexl::write_xlsx(contract_years, "data/contract_year_stats.xlsx")

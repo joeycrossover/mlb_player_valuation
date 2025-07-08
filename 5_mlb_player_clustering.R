@@ -1,17 +1,17 @@
-source("libraries.R")
+source("code/libraries.R")
 
 # the following code normalizes mlb data and uses k-means clustering
 # to identify the player prototypes that get paid the most
 # author: joseph coleman, 5/28/2025
 
+# load data ----
 # load the contract year stats (2) data from '3_scrape_accolades.R'
-contract_year_stats <- readxl::read_xlsx("data/contract_year_stats2.xlsx")
-contract_year_stats <- fastDummies::dummy_cols(contract_year_stats, select_columns = "pos", remove_first_dummy = TRUE)
+contract_year_stats <- readxl::read_xlsx("data/contract_year_stats.xlsx")
 
 # define features
 features <- names(contract_year_stats)[11:ncol(contract_year_stats)]
 
-# Normalization ----
+# normalization ----
 # we need to normalize our features using z-score standardization
 # this is going to transform each predictor so that it has a mean of 0
 # and a standard deviation of 1
@@ -28,6 +28,12 @@ scaled_df <- contract_year_stats %>%
   replace(is.na(.), 0) %>%
   mutate(across(everything(), ~scale(.)[,1])) # scale() returns a matrix; we grab the vector
 
+scaling_means <- apply(contract_year_stats %>% select(all_of(features)) %>% replace(is.na(.), 0), 2, mean)
+scaling_sds <- apply(contract_year_stats %>% select(all_of(features)) %>% replace(is.na(.), 0), 2, sd)
+
+saveRDS(scaling_means, "models/scaling_means.rds")
+saveRDS(scaling_sds, "models/scaling_sds.rds")
+
 # combine normalized features with player info
 normalized_df <- bind_cols(
   contract_year_stats %>% select(1:10),
@@ -36,7 +42,7 @@ normalized_df <- bind_cols(
 
 writexl::write_xlsx(normalized_df, "data/normalized_contract_year_stats.xlsx")
 
-# K-Means Clustering ----
+# k-means clustering ----
 # we can try clustering using k-means to see if there are patterns in which player prototypes
 # are landing bigger contracts
 # k-means clustering is an unsupervised machine learning algorithm used to group similar data points into 'K' distinct clusters
@@ -50,7 +56,7 @@ set.seed(42)
 wcss <- vector()
 
 for (k in 1:10) {
-  kmeans_model <- kmeans(scaled_df %>% select(1:109), centers = k, nstart = 25) # omit position columns from clustering
+  kmeans_model <- kmeans(scaled_df, centers = k, nstart = 25) # omit position columns from clustering
   wcss[k] <- kmeans_model$tot.withinss
 }
 
@@ -77,7 +83,10 @@ elbow_df$wcss_percent_change <- round((elbow_df$wcss_change / lag(elbow_df$wcss)
 
 # optimal number of clusters may be 4 or 5
 optimal_k <- 5
-kmeans_result <- kmeans(normalized_df[, 11:119], centers = optimal_k)
+kmeans_result <- kmeans(normalized_df[, 11:ncol(normalized_df)], centers = optimal_k)
+
+# save this so you can apply same clusters to new players
+saveRDS(kmeans_result$centers, file = "models/kmeans_centroids.rds")
 
 cluster_df <- contract_year_stats %>%
   mutate(cluster = kmeans_result$cluster) %>%
@@ -88,8 +97,10 @@ cluster_summary <- cluster_df %>%
   group_by(cluster) %>%
   summarise(across(everything(), mean, na.rm = TRUE))
 
-cluster_summary2 <- cluster_summary %>%
+cluster_summary_key_stats <- cluster_summary %>%
   select(1:5, 23:24, 26:27, 32, 34:37, 42:43, 96:97, 102:105, 113)
+
+key_stats_names <- colnames(cluster_summary_key_stats)
 
 cluster_df %>% group_by(cluster) %>% summarise(count = n())
 
@@ -106,6 +117,18 @@ cluster_labels <- c(
 cluster_summary$cluster_label <- cluster_labels[as.character(cluster_summary$cluster)]
 cluster_summary <- cluster_summary %>% select(1,114,2:113)
 cluster_df$cluster_label <- cluster_labels[as.character(cluster_df$cluster)]
+
+normalized_cluster_df <- normalized_df %>%
+  mutate(cluster = kmeans_result$cluster) %>%
+  select(cluster, everything())
+
+normalized_cluster_df$cluster_label <- cluster_labels[as.character(normalized_cluster_df$cluster)]
+
+cluster_df <- cluster_df %>% select(full_name, cluster_label, everything())
+normalized_cluster_df <- normalized_cluster_df %>% select(full_name, cluster_label, everything())
+
+writexl::write_xlsx(cluster_df, "data/cluster_df.xlsx")
+writexl::write_xlsx(normalized_cluster_df, "data/normalized_cluster_df.xlsx")
 
 ggplot(cluster_df, aes(x = yrs, y = aav, color = as.factor(cluster))) +
   geom_point(size = 3, alpha = 0.7) +
