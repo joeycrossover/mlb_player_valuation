@@ -19,3 +19,5 @@ Data preparation and feature engineering
 Model training and evaluation (train/test split)
 
 Visualizations including actual vs. predicted values and player-level annotations
+
+https://medium.com/@joeycrossover/moneyball-2-0-using-machine-learning-to-project-mlb-player-contracts-f0517f6d453e
