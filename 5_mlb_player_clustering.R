@@ -67,12 +67,13 @@ for (k in 1:10) {
 elbow_df <- data.frame(k = 1:10, wcss = wcss)
 ggplot(elbow_df, aes(x = k, y = wcss)) +
   geom_line(color = "steelblue", size = 1) +
-  geom_point(color = "red", size = 2) +
+  geom_point(color = "red", size = 5) +
   scale_x_continuous(breaks = 1:10) +
   labs(title = "Elbow Method For Optimal k",
        x = "Number of Clusters (k)",
        y = "Within-Cluster Sum of Squares") +
-  theme_minimal(base_size = 14)
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold"))
 
 # to verify the optimal number of clusters we can add
 # a variable to our elbow_df showing the difference in wcss
@@ -131,20 +132,22 @@ writexl::write_xlsx(cluster_df, "data/cluster_df.xlsx")
 writexl::write_xlsx(normalized_cluster_df, "data/normalized_cluster_df.xlsx")
 
 ggplot(cluster_df, aes(x = yrs, y = aav, color = as.factor(cluster))) +
-  geom_point(size = 3, alpha = 0.7) +
+  geom_point(size = 5, alpha = 0.7) +
   scale_color_viridis_d() +
   labs(title = "Player Clusters by Contract Terms",
        x = "Contract Length (Years)",
        y = "Average Annual Value (AAV)",
        color = "cluster") +
-  theme_minimal()
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold"))
 
 ggplot(cluster_df, aes(x = as.factor(cluster), y = aav)) +
   geom_boxplot(fill = "skyblue") +
   labs(title = "AAV by Cluster",
        x = "Cluster",
        y = "Average Annual Value (AAV)") +
-  theme_minimal(base_size = 14)
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold"))
 
 # select top 3 earners per cluster for visualization
 top_players <- cluster_df %>%
@@ -156,9 +159,9 @@ top_players <- cluster_df %>%
 
 # scatter plot
 ggplot(top_players, aes(x = yrs, y = value / 1e6, color = cluster_label, label = full_name)) +
-  geom_point(size = 4, alpha = 0.8) +
+  geom_point(size = 5, alpha = 0.8) +
   ggrepel::geom_text_repel(
-    size = 3.5,
+    size = 5,
     show.legend = FALSE,
     max.overlaps = 30,
     box.padding = 0.35,
@@ -172,7 +175,8 @@ ggplot(top_players, aes(x = yrs, y = value / 1e6, color = cluster_label, label =
     color = "Player Cluster"
   ) +
   theme_minimal(base_size = 14) +
-  scale_color_brewer(palette = "Set2")
+  scale_color_brewer(palette = "Set2") +
+  theme(plot.title = element_text(face = "bold"))
 
 # select top 3 in xWOBA per cluster for visualization
 # when we do correlation analysis below, we find out
@@ -188,9 +192,9 @@ top_xwoba_players <- cluster_df %>%
 
 # scatter plot
 ggplot(top_xwoba_players, aes(x = career_xwoba, y = value / 1e6, color = cluster_label, label = full_name)) +
-  geom_point(size = 4, alpha = 0.8) +
+  geom_point(size = 5, alpha = 0.8) +
   ggrepel::geom_text_repel(
-    size = 3.5,
+    size = 5,
     show.legend = FALSE,
     max.overlaps = 30,
     box.padding = 0.35,
@@ -204,7 +208,8 @@ ggplot(top_xwoba_players, aes(x = career_xwoba, y = value / 1e6, color = cluster
     color = "Player Cluster"
   ) +
   theme_minimal(base_size = 14) +
-  scale_color_brewer(palette = "Set2")
+  scale_color_brewer(palette = "Set2") +
+  theme(plot.title = element_text(face = "bold"))
 
 top_players_plot <- top_players %>%
   mutate(plot_type = "Contract Length vs Value")
@@ -220,9 +225,9 @@ ggplot(combined_plot_data, aes(
   color = cluster_label,
   label = full_name
 )) +
-  geom_point(size = 4, alpha = 0.8) +
+  geom_point(size = 5, alpha = 0.8) +
   ggrepel::geom_text_repel(
-    size = 3.5,
+    size = 5,
     show.legend = FALSE,
     max.overlaps = 30,
     box.padding = 0.35,
@@ -236,7 +241,8 @@ ggplot(combined_plot_data, aes(
   ) +
   facet_wrap(~ plot_type, scales = "free_x") +
   theme_minimal(base_size = 14) +
-  scale_color_brewer(palette = "Set2")
+  scale_color_brewer(palette = "Set2") +
+  theme(plot.title = element_text(face = "bold"))
 
 # yordan alvarez seems to be really undervalued
 # as does freddie freeman

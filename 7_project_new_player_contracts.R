@@ -28,7 +28,7 @@ new_stats <- new_stats %>%
 
 new_stats <- new_stats %>%
   mutate(
-    season_progress = as.numeric(as.Date("2025-06-24") - as.Date("2025-03-27")) / 
+    season_progress = as.numeric(as.Date("2025-07-08") - as.Date("2025-03-27")) / 
       as.numeric(as.Date("2025-09-29") - as.Date("2025-03-27")),
     
     games_on_pace = if_else(year == 2025, round(b_game / season_progress, 0), b_game),
@@ -454,6 +454,8 @@ writexl::write_xlsx(new_cluster_df, "data/new_cluster_df.xlsx")
 writexl::write_xlsx(new_normalized_cluster_df, "data/new_normalized_cluster_df.xlsx")
 
 # model with new players ----
+contract_length_model <- readRDS("models/contract_length_model.rds")
+contract_value_model <- readRDS("models/contract_value_model.rds")
 selected_value_features <- readRDS("models/selected_value_features.rds")
 selected_length_features <- readRDS("models/selected_length_features.rds")
 multivariate_features <- unique(c(selected_length_features, selected_value_features))
@@ -485,7 +487,8 @@ combined_long <- bind_rows(train_long, test_long)
 ggplot(combined_long, aes(x = value, fill = source)) +
   geom_density(alpha = 0.5) +
   facet_wrap(~feature, scales = "free", ncol = 4) +
-  theme_minimal() +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold")) +
   labs(title = "Distribution of Features: Training vs. New Data",
        x = "Normalized Value",
        fill = "Source")
@@ -496,22 +499,22 @@ project_spotrac_style <- function(new_player,
                                   store_name = NULL,
                                   stat_features = c("career_avg_war", "career_xwoba", "career_woba",
                                                "career_xobp", "career_xslg", "career_avg_hr", "season_avg_war")) {
-  
+
   important_features <- c("career_avg_war", "career_xwoba", "career_woba")
   weights <- setNames(rep(1, length(stat_features)), stat_features)
   weights[important_features] <- 3
-  
+
   cluster_val <- new_player$cluster
   pos_val <- new_player$pos
   age_val <- new_player$player_age
-  
+
   player_comps <- comps_df %>%
     filter(cluster == cluster_val & abs(player_age - age_val) <= age_tolerance)
-  
+
   if (pos_val %in% c("C", "DH")) {
     player_comps <- player_comps %>% filter(pos == pos_val)
   }
-  
+
   if (nrow(player_comps) > 5) {
     player_vec <- as.numeric(new_player[, stat_features])
     comp_mat <- player_comps[, stat_features] %>% as.matrix()
@@ -521,7 +524,7 @@ project_spotrac_style <- function(new_player,
       arrange(similarity_dist) %>%
       slice_head(n = 5)
   }
-  
+
   if (nrow(player_comps) < 3) {
     for (tol in (age_tolerance + 1):5) {
       player_comps <- comps_df %>%
@@ -529,9 +532,9 @@ project_spotrac_style <- function(new_player,
       if (nrow(player_comps) >= 3) break
     }
   }
-  
+
   if (nrow(player_comps) < 3) return(list(proj_yrs = NA, proj_value = NA))
-  
+
   pct_diffs <- map_dbl(
     stat_features,
     function(f) {
@@ -541,25 +544,25 @@ project_spotrac_style <- function(new_player,
       mean(diffs, na.rm = TRUE) * weights[[f]]
     }
   ) %>% set_names(stat_features)
-  
+
   pct_diffs <- pct_diffs[is.finite(pct_diffs)]
   remaining_features <- names(pct_diffs)
   used_weights <- weights[remaining_features]
   avg_change <- weighted.mean(pct_diffs, w = used_weights, na.rm = TRUE)
-  
+
   base_yrs <- mean(player_comps$yrs, na.rm = TRUE)
   base_val <- mean(player_comps$value, na.rm = TRUE)
-  
+
   proj_yrs <- round(base_yrs * (1 + avg_change))
   proj_value <- round(base_val * (1 + avg_change), 1)
-  
+
   if (!is.null(store_name)) {
     comps_out <- player_comps %>%
       select(full_name, player_age, pos, yrs, value, all_of(stat_features))
-    
+
     comp_avgs <- comps_out %>%
       summarise(across(c(yrs, value, all_of(stat_features)), ~mean(.x, na.rm = TRUE)))
-    
+
     pct_diffs_row <- map_dbl(
       stat_features,
       function(f) {
@@ -570,16 +573,16 @@ project_spotrac_style <- function(new_player,
       }
     )
     names(pct_diffs_row) <- stat_features
-    
+
     projection_row <- tibble(
-      full_name = "Projection/Comps",
+      full_name = "projection/comps",
       player_age = age_val,
       pos = pos_val,
       yrs = proj_yrs,
       value = proj_value
     ) %>%
       bind_cols(as_tibble_row(pct_diffs_row))
-    
+
     player_row <- new_player %>%
       select(all_of(stat_features)) %>%
       mutate(full_name = store_name,
@@ -587,14 +590,18 @@ project_spotrac_style <- function(new_player,
              pos = pos_val,
              yrs = NA, value = NA) %>%
       select(full_name, player_age, pos, yrs, value, all_of(stat_features))
-    
+
     comp_log_tbl <- bind_rows(
       comps_out,
-      comp_avgs %>% mutate(full_name = "Base/Averages", player_age = NA, pos = NA),
+      comp_avgs %>% mutate(full_name = "base/averages", player_age = NA, pos = NA),
       player_row,
       projection_row
     )
     
+    comp_log_tbl$aav <- round(comp_log_tbl$value / comp_log_tbl$yrs, 1)
+    comp_log_tbl <- comp_log_tbl %>%
+      select(full_name, player_age, pos, yrs, value, aav, all_of(stat_features))
+
     if (!exists("player_comp_tables", envir = .GlobalEnv)) {
       assign("player_comp_tables", list(), envir = .GlobalEnv)
     }
@@ -602,7 +609,7 @@ project_spotrac_style <- function(new_player,
     comp_log[[store_name]] <- comp_log_tbl
     assign("player_comp_tables", comp_log, envir = .GlobalEnv)
   }
-  
+
   return(list(proj_yrs = proj_yrs, proj_value = proj_value))
 }
 
@@ -635,11 +642,13 @@ for (name in names(player_comp_tables)) {
     mutate(
       yrs = round(yrs),
       value = round(value / 1e6, 1),
+      aav = round(value / yrs, 1),
       across(all_of(stat_cols), ~ round(.x, 3))
     )
+
   writeData(wb, sheet = safe_name, x = sheet_data)
-  
-  
+
+
   for (col in stat_cols) {
     conditionalFormatting(
       wb, sheet = safe_name,
@@ -656,7 +665,7 @@ for (name in names(player_comp_tables)) {
 
 saveWorkbook(wb, "data/player_comps_output.xlsx", overwrite = TRUE)
 
-new_contract_projections <- new_cluster_df %>% 
+new_contract_projections <- new_cluster_df %>%
   select(1, 2, 6, proj_yrs, proj_value, proj_aav, career_avg_war, career_xwoba, career_woba,
          career_xobp, career_xslg, career_avg_hr, season_avg_war)
 
@@ -670,6 +679,10 @@ new_contract_projections %>%
   mutate(full_name = fct_reorder(full_name, proj_value)) %>%
   ggplot(aes(x = full_name, y = proj_value, fill = cluster_label)) +
   geom_col() +
+  geom_text(
+    aes(label = paste("$", round(proj_value, 1), "M", sep = "")),
+    hjust = -0.1, size = 5
+  ) +
   coord_flip() +
   labs(
     x = "Player",
@@ -677,4 +690,124 @@ new_contract_projections %>%
     title = "Projected Value by Player",
     fill = "Cluster"
   ) +
-  theme_minimal()
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold")) +
+  expand_limits(y = max(new_contract_projections$proj_value) * 1.1)
+
+ggplot(new_contract_projections, aes(x = proj_yrs, y = proj_value, color = proj_aav)) +
+  geom_point(size = 5) +
+  scale_color_viridis_c(name = "Projected AAV\n($M/year)", option = "C") +
+  geom_text(
+    aes(label = full_name),
+    size = 5,
+    hjust = -0.1,
+    vjust = 0.5,
+    check_overlap = TRUE
+  ) +
+  scale_x_continuous(
+    breaks = seq(0, max(new_contract_projections$proj_yrs, na.rm = TRUE), by = 2)
+  ) +
+  labs(
+    x = "Projected Contract Length (Years)",
+    y = "Projected Contract Value ($M)",
+    title = "MLB Contract Projections: Length vs. Value",
+    subtitle = "Color shows projected AAV (Millions USD)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "right")
+
+ggplot(new_contract_projections, aes(x = proj_yrs, y = proj_value, color = cluster_label, size = proj_aav)) +
+  geom_point(alpha = 1.0) +
+  geom_text_repel(aes(label = full_name), size = 5, max.overlaps = 15) +
+  scale_size_continuous(name = "AAV ($M/year)") +
+  scale_color_brewer(palette = "Set2", name = "Cluster") +
+  labs(
+    x = "Projected Years",
+    y = "Projected Value ($M)",
+    title = "Contract Value vs. Length, by Cluster",
+    subtitle = "Bubble size shows Average Annual Value (AAV)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "right")
+
+spotrac_projections <- read_xlsx("data/spotrac_projections.xlsx")
+
+spotrac_projections <- merge(spotrac_projections, new_contract_projections, by.x = "full_name", all.x = TRUE) %>%
+  select(1,5,6,2:4,7:16) %>%
+  mutate(spotrac_aav = round(spotrac_aav, 1))
+
+ggplot(spotrac_projections, aes(x = spotrac_value, y = proj_value, label = full_name)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", color = "gray") +
+  geom_point(aes(color = cluster_label), size = 5) +
+  geom_text_repel(size = 5, max.overlaps = 10) +
+  scale_color_brewer(palette = "Set2") +
+  labs(
+    x = "Spotrac Projected Value (M USD)",
+    y = "My Projected Value (M USD)",
+    title = "Contract Value: My Model vs. Spotrac",
+    subtitle = "Dotted line = perfect agreement"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold"),
+        legend.position = "right")
+
+# plot actuals vs predictions
+actual_length <- spotrac_projections$spotrac_yrs
+actual_value <- spotrac_projections$spotrac_value
+
+proj_yrs <- spotrac_projections$proj_yrs
+proj_value <- spotrac_projections$proj_value
+
+v_residuals <- actual_value - proj_value
+classification <- case_when(
+  actual_value < 50 ~ ifelse(abs(v_residuals) < 0.5 * actual_value, "accurate",
+                             ifelse(v_residuals < 0, "undervalued", "overvalued")),
+  actual_value < 150 ~ ifelse(abs(v_residuals) < 0.35 * actual_value, "accurate",
+                              ifelse(v_residuals < 0, "undervalued", "overvalued")),
+  TRUE ~ ifelse(abs(v_residuals) < 0.25 * actual_value, "accurate",
+                ifelse(v_residuals < 0, "undervalued", "overvalued"))
+)
+
+spotrac_projections$classification <- classification
+
+writexl::write_xlsx(spotrac_projections, "data/compare_projections_w_spotrac.xlsx")
+
+# top_players <- new_cluster_df %>%
+#   arrange(desc(career_xwoba)) %>%
+#   slice_head(n = 5)
+# 
+# top_players_normalized <- new_normalized_cluster_df %>%
+#   arrange(desc(career_xwoba)) %>%
+#   slice_head(n = 5)
+# 
+# top_players$proj_yrs <- round(predict(contract_length_model, newdata = top_players_normalized %>% select(all_of(selected_length_features))))
+# proj_value <- predict(contract_value_model, newdata = top_players_normalized %>% select(all_of(multivariate_features)))
+# top_players$proj_value <- round(proj_value[, 2] /1e6, 1)
+# top_players$proj_aav <- round(top_players$proj_value / top_players$proj_yrs, 1)
+# 
+# new_contract_projections <- top_players %>%
+#   select(1, 2, 7, 6, proj_yrs, proj_value, proj_aav, career_avg_war, career_xwoba, career_woba,
+#          career_xobp, career_xslg, career_avg_hr, silver_slugger)
+# 
+# train_long <- normalized_cluster_df %>%
+#   select(all_of(multivariate_features)) %>%
+#   mutate(source = "train") %>%
+#   pivot_longer(cols = -source, names_to = "feature", values_to = "value")
+# 
+# test_long <- top_players_normalized %>%
+#   select(all_of(multivariate_features)) %>%
+#   mutate(source = "new") %>%
+#   pivot_longer(cols = -source, names_to = "feature", values_to = "value")
+# 
+# combined_long <- bind_rows(train_long, test_long)
+# 
+# # Plot
+# ggplot(combined_long, aes(x = value, fill = source)) +
+#   geom_density(alpha = 0.5) +
+#   facet_wrap(~feature, scales = "free", ncol = 4) +
+#   theme_minimal() +
+#   labs(title = "Distribution of Features: Training vs. New Data",
+#        x = "Normalized Value",
+#        fill = "Source")

@@ -81,14 +81,14 @@ contract_summary_long$metric <- recode(contract_summary_long$metric,
                                        avg_aav = "AAV ($M)")
 
 ggplot(contract_summary_long, aes(x = start, y = average)) +
-  geom_line(color = "steelblue", size = 1.2) +
-  geom_point(color = "darkred", size = 2) +
+  geom_line(color = "steelblue", size = 1) +
+  geom_point(color = "darkred", size = 5) +
   facet_wrap(~ metric, scales = "free_y") +
   labs(title = "Contract Trends by Start Year",
        x = "Start Year",
        y = "Average") +
-  theme_minimal() +
-  theme(strip.text = element_text(face = "bold", size = 12))
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold"))
 
 # this was pulled manually in April 2025 and will obviously not reflect the player's
 # following at the time of signing
@@ -96,7 +96,7 @@ ggplot(contract_summary_long, aes(x = start, y = average)) +
 
 top_10_ig <- contract_year_stats %>%
   arrange(desc(ig_followers)) %>%
-  slice(1:10) %>%
+  head(10) %>%
   mutate(
     ig_followers_millions = ig_followers / 1e6,
     full_name = factor(full_name, levels = rev(full_name))
@@ -122,7 +122,7 @@ ggplot(top_10_ig, aes(x = full_name, y = ig_followers_millions)) +
   )
 
 ggplot(contract_year_stats, aes(x = ig_followers, y = value / 1e6)) +
-  geom_point() +
+  geom_point(alpha = 0.6, color = "#2c3e50", size = 5) +
   scale_x_log10() +
   labs(
     x = "Instagram Followers (log scale)",
@@ -134,12 +134,13 @@ ggplot(contract_year_stats, aes(x = ig_followers, y = value / 1e6)) +
     data = contract_year_stats %>%
       slice_max(order_by = value, n = 4),
     aes(label = full_name),
-    size = 3.5,
+    size = 5,
     box.padding = 0.3,
     point.padding = 0.5,
     segment.color = "gray40"
   ) +
-  theme_minimal(base_size = 14)
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold"))
 
 plot_data <- contract_year_stats %>%
   mutate(aav = aav / 1e6) %>%
@@ -154,7 +155,7 @@ plot_data <- contract_year_stats %>%
 
 # Create faceted plot
 ggplot(plot_data, aes(x = player_age, y = value)) +
-  geom_point(alpha = 0.6, color = "#2c3e50", size = 2) +
+  geom_point(alpha = 0.6, color = "#2c3e50", size = 5) +
   geom_smooth(method = "lm", se = FALSE, color = "#2980b9", linetype = "dashed", size = 1) +
   facet_wrap(~ contract_metric, scales = "free_y") +
   scale_x_continuous(breaks = seq(20, 40, by = 5)) +
@@ -165,14 +166,14 @@ ggplot(plot_data, aes(x = player_age, y = value)) +
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
-    strip.text = element_text(face = "bold", size = 14),
-    axis.title.x = element_text(face = "bold"),
-    panel.grid.minor = element_blank()
+    plot.title = element_text(face = "bold")
+    # strip.text = element_text(face = "bold", size = 14),
+    # axis.title.x = element_text(face = "bold"),
+    # panel.grid.minor = element_blank()
   )
 
 ggplot(contract_year_stats, aes(x = career_avg_war, y = value / 1e6)) +
-  geom_point(alpha = 0.7, color = "#2c3e50", size = 2.5) +
+  geom_point(alpha = 0.7, color = "#2c3e50", size = 5) +
   geom_smooth(method = "lm", se = FALSE, color = "#27ae60", linetype = "dashed", size = 1) +
   labs(
     x = "Career Average WAR per Season",
@@ -181,15 +182,15 @@ ggplot(contract_year_stats, aes(x = career_avg_war, y = value / 1e6)) +
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
-    axis.title = element_text(face = "bold"),
-    panel.grid.minor = element_blank()
+    plot.title = element_text(face = "bold")
+    # axis.title = element_text(face = "bold"),
+    # panel.grid.minor = element_blank()
   ) +
   ggrepel::geom_text_repel(
     data = contract_year_stats %>%
       slice_max(order_by = value, n = 4),
     aes(label = full_name),
-    size = 3.5,
+    size = 5,
     box.padding = 0.3,
     point.padding = 0.5,
     segment.color = "gray40"
@@ -215,7 +216,7 @@ ig_long <- top_10_ig %>%
 ggplot(ig_long, aes(x = reorder(full_name, value), y = value)) +
   geom_segment(aes(xend = full_name, y = 0, yend = value), 
                color = "skyblue", size = 1) +
-  geom_point(color = "steelblue", size = 4) +
+  geom_point(color = "steelblue", size = 5) +
   coord_flip() +
   facet_wrap(~ metric, scales = "free_x") +
   labs(
@@ -226,18 +227,21 @@ ggplot(ig_long, aes(x = reorder(full_name, value), y = value)) +
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    strip.text = element_text(face = "bold"),
-    plot.title = element_text(face = "bold"),
-    panel.grid.major.y = element_blank()
+    # strip.text = element_text(face = "bold")
+    plot.title = element_text(face = "bold")
+    # panel.grid.major.y = element_blank()
   )
 
 avg_value_by_pos <- contract_year_stats %>%
   group_by(pos) %>%
   summarise(avg_value = mean(value, na.rm = TRUE) / 1e6) %>%
-  arrange(desc(avg_value))
+  arrange(desc(avg_value)) %>%
+  filter(!pos == "OF")
 
 ggplot(avg_value_by_pos, aes(x = reorder(pos, avg_value), y = avg_value)) +
   geom_col(fill = "#69b3a2") +
+  geom_text(aes(label = paste0(round(avg_value, 1), "M")), 
+            hjust = -0.01, size = 5) +
   coord_flip() +
   labs(
     title = "Average MLB Contract Value by Position",

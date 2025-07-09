@@ -47,7 +47,8 @@ ggplot(top_corr_value_features, aes(x = reorder(feature, correlation), y = corre
     x = "Feature",
     y = "Correlation with Contract Value"
   ) +
-  theme_minimal(base_size = 14)
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold"))
 
 # view sorted correlations with 'years'
 correlations_with_length <- as.data.frame(sort(correlations[, "yrs"], decreasing = TRUE))
@@ -68,7 +69,8 @@ ggplot(top_corr_length_features, aes(x = reorder(feature, correlation), y = corr
   labs(title = "Top Features Correlated with Contract Length",
        x = "Feature",
        y = "Correlation with Contract Length") +
-  theme_minimal(base_size = 14)
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold"))
 
 # modeling ----
 set.seed(123)
@@ -423,14 +425,14 @@ ggplot(results_df %>% rename(Classification = classification), aes(x = value, y 
   ggrepel::geom_text_repel(
     data = subset(results_df %>% rename(Classification = classification), full_name %in% label_subset),
     aes(label = full_name),
-    size = 3.5,
+    size = 5,
     show.legend = FALSE,
     max.overlaps = 25,
     box.padding = 0.3,
     point.padding = 0.3,
     segment.color = 'grey60'
   ) +
-  geom_point(size = 2, stroke = 0.5, alpha = 0.85) +
+  geom_point(size = 5, stroke = 0.5, alpha = 0.85) +
   geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "black") +
   labs(
     x = "Actual Contract Value (millions)",
@@ -445,7 +447,8 @@ ggplot(results_df %>% rename(Classification = classification), aes(x = value, y 
   )) +
   scale_x_continuous(limits = c(0, 800), breaks = c(0, 100, 200, 300, 400, 500, 600, 700, 800)) +
   scale_y_continuous(limits = c(0, 800), breaks = c(0, 100, 200, 300, 400, 500, 600, 700, 800)) +
-  theme_minimal()
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold"))
 
 results_df <- results_df %>% select(1:16) %>%
   merge(., cluster_df %>% select(player_id, all_of(multivariate_features)), by = "player_id")
@@ -499,7 +502,7 @@ ggplot(melted_results, aes(x = classification, y = average, fill = classificatio
     position = position_dodge(width = 0.6),
     vjust = 1.5,
     color = "white",
-    size = 3.5
+    size = 5
   ) +
   facet_wrap(~ feature, scales = "free_y") +
   labs(
@@ -509,8 +512,9 @@ ggplot(melted_results, aes(x = classification, y = average, fill = classificatio
   ) +
   theme_minimal(base_size = 14) +
   theme(
-    axis.text.x = element_text(angle = 30, hjust = 1),
-    legend.position = "none"
+    plot.title = element_text(face = "bold")
+    # axis.text.x = element_text(angle = 30, hjust = 1),
+    # legend.position = "none"
   ) +
   scale_fill_manual(values = c(
     "undervalued" = "darkgreen",
